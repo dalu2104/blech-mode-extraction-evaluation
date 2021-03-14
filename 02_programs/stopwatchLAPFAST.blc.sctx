@@ -1,0 +1,48 @@
+scchart Main {
+ input host "bool" isPressedStartStop
+ input host "bool" isPressedReset
+host "localVar" display
+  initial state s50 "" {
+region {
+  initial state s210 ""  if true go to s210 label "true"
+
+}
+region {
+  initial state s120 "StopWatchController" is StopWatchController(isPressedStartStop,isPressedReset,display) 
+}
+}
+ }
+
+scchart StopWatchController {
+ input host "bool" isPressedStartStop
+ input host "bool" isPressedResetLap
+ output host "Display" display
+host "localVar" lastLap
+host "localVar" totalTime
+  initial state s80 ""  if true go to s240 label "isPressedStartStop"
+  state s240 "Measurement" is Measurement(isPressedResetLap,totalTime,lastLap,display) if true abort to s190 label "isPressedStartStop"
+  state s190 ""  if true go to s160 label "isPressedStartStop or isPressedResetLap"
+  connector state s160 ""  immediate if true go to s80 label "1: isPressedResetLap"
+immediate go to s240 label "2: "
+}
+
+scchart Measurement {
+ input host "bool" isPressedResetLap
+ output host "int32" totalTime
+ output host "int32" lastLap
+ output host "Display" display
+  initial state s50 "" {
+region {
+  initial state s320 ""  if true go to s330 label "true"
+  connector state s330 ""  immediate if true go to s300 label "1: isPressedResetLap"
+immediate go to s320 label "2: "
+  state s300 ""  if true go to s320 label "isPressedResetLap"
+
+}
+region {
+  initial state s150 ""  if true go to s150 label "true"
+
+}
+}
+ }
+

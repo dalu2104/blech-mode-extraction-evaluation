@@ -1,0 +1,108 @@
+scchart Main {
+host "localVar" blinkerLeverPos
+host "localVar" warningPushed
+host "localVar" rotation
+  initial state s50 "" {
+region {
+  initial state s240 "BlinkerController" is BlinkerController(warningPushed,blinkerLeverPos) 
+}
+region {
+  initial state s180 "WheelPosMonitor" is WheelPosMonitor(rotation) 
+}
+region {
+  initial state s120 "BlinkerLeverMonitor" is BlinkerLeverMonitor(rotation,blinkerLeverPos) 
+}
+}
+ }
+
+scchart WheelPosMonitor {
+ output host "int32" rotation
+  initial state s80 ""  if true go to s80 label "true"
+}
+
+scchart BlinkerController {
+ input host "bool" warningPushed
+ input host "int32" blinkerLeverPos
+host "localVar" warningIndicator
+host "localVar" structnom6denom7
+host "localVar" leftBlinker
+host "localVar" rightBlinker
+  initial state s172 "" {
+region {
+  initial state s301 "ConditionalBlinker" is ConditionalBlinker(blinkerLeverPos,2,leftBlinker) 
+}
+region {
+  initial state s242 "ConditionalBlinker" is ConditionalBlinker(blinkerLeverPos,0,rightBlinker) 
+}
+}
+ if true abort to s384 label "warningPushed"
+  state s384 "" {
+region {
+  initial state s544 ""  if true go to s544 label "true"
+
+}
+region {
+  initial state s454 "Blinker" is Blinker(structnom6denom7,warningIndicator) 
+}
+}
+ if true abort to s172 label "warningPushed"
+}
+
+scchart ConditionalBlinker {
+ input host "int32" pos
+ input host "int32" targetPos
+ output host "bool" blinker
+host "localVar" structnom4denom5
+  initial state s84 ""  if true go to s184 label "pos == targetPos"
+  state s184 "Blinker" is Blinker(structnom4denom5,blinker) if true abort to s84 label "not (pos == targetPos)"
+}
+
+scchart Blinker {
+ input host "Ratio" ratio
+ output host "bool" blinker
+host "localVar" denom
+host "localVar" nom
+  initial state s114 "Delay" is Delay(nom) join to s134 label "1: "
+  state s134 "Delay" is Delay(denom) join to s114 label "1: "
+}
+
+scchart BlinkerLeverMonitor {
+ input host "int32" rotation
+ output host "int32" blinkerLeverPos
+host "localVar" localBlinkerLeverPos
+host "localVar" movedBlinkerLeverPos
+host "localVar" blinkerLeverMove
+  initial state s50 "" {
+region {
+  initial state s274 ""  if true go to s274 label "true"
+
+}
+region {
+  initial state s180 "BlinkerLeverRotationUpdater" is BlinkerLeverRotationUpdater(rotation,movedBlinkerLeverPos,localBlinkerLeverPos) 
+}
+region {
+  initial state s120 "BlinkerLeverMover" is BlinkerLeverMover(blinkerLeverMove,pre(localBlinkerLeverPos),movedBlinkerLeverPos) 
+}
+}
+ }
+
+scchart BlinkerLeverRotationUpdater {
+ input host "int32" rotation
+ input host "int32" movedBlinkerLeverPos
+ output host "int32" blinkerLeverPos
+  initial state s134 ""  if true go to s134 label "true"
+}
+
+scchart BlinkerLeverMover {
+ input host "int32" blinkerLeverMove
+ input host "int32" prevBlinkerLeverPos
+ output host "int32" blinkerLeverPos
+  initial state s134 ""  if true go to s134 label "true"
+}
+
+scchart Delay {
+ input host "nat8" ticks
+  initial state s94 ""  immediate if true go to s30 label "1: counter == 0"
+if true go to s94 label "true"
+  final state s30 ""  }
+

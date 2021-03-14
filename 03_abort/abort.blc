@@ -1,0 +1,9 @@
+@[EntryPoint]
+activity A (in1: bool) (in2: int32)
+    when in1 abort
+        in2 = in2 + 1
+        await true
+        in2 = in2 + 2
+	   await true
+    end
+end

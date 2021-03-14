@@ -1,0 +1,10 @@
+@[EntryPoint]
+activity P (in1: bool, in2: bool) (out1: int32)
+    // matches pattern with await in2
+    cobegin weak
+        await in1
+        await in1
+    with
+        await in2
+    end
+end

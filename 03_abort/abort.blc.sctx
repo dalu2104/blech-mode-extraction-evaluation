@@ -1,0 +1,20 @@
+/** 
+ @[EntryPoint]
+activity A (in1: bool) (in2: int32)
+    when in1 abort
+        in2 = in2 + 1
+        await true
+        in2 = in2 + 2
+	   await true
+    end
+end
+ */ 
+scchart A {
+ input host "bool" in1
+ output host "int32" in2
+  initial state s80 ""  if true abort to s30 label "in1"
+if true go to s110 label "true"
+  final state s30 ""    state s110 ""  if true abort to s30 label "in1"
+if true go to s30 label "true"
+}
+

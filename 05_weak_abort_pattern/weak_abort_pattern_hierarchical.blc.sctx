@@ -1,0 +1,29 @@
+/** 
+ @[EntryPoint]
+activity P (in1: bool, in2: bool) (out1: int32)
+    // matches pattern with await in2
+    cobegin weak
+        await in1
+        await in1
+    with
+        await in2
+    end
+end
+ */ 
+scchart P {
+ input host "bool" in1
+ input host "bool" in2
+ output host "int32" out1
+  initial final state s50 "" {
+region {
+  initial state s150 ""  if true go to s160 label "in2"
+  final state s160 ""  
+}
+final region {
+  initial state s90 ""  if true go to s120 label "in1"
+  state s120 ""  if true go to s100 label "in1"
+  final state s100 ""  
+}
+}
+ }
+

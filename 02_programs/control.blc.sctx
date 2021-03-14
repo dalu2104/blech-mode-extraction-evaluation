@@ -1,0 +1,215 @@
+scchart Main {
+ input host "SensorValues" sv
+ output host "PumpStates" ps
+ output host "LedStates" ls
+host "localVar" sh
+host "localVar" mode
+  initial state s20 ""  if true go to s50 label "true"
+  state s50 ""  if true go to s70 label "true"
+  state s70 "" {
+region {
+  initial state s440 "NormalMode" is NormalMode(sv,ps) if true abort to s520 label "not allSensorsOkay(sh)"
+join to s520 label "1: "
+  state s520 "EmergencyMode" is EmergencyMode(ps) if true abort to s440 label "allSensorsOkay(sh)"
+join to s440 label "1: "
+
+}
+region {
+  initial state s260 "CheckSensorHealthStatus" is CheckSensorHealthStatus(sv,sh) 
+}
+region {
+  initial state s200 "UpdateLedStates" is UpdateLedStates(sh,ps,ls) 
+}
+region {
+  initial state s140 "LogControlState" is LogControlState(sv,ps,mode) 
+}
+}
+ }
+
+scchart EmergencyMode {
+ output host "PumpStates" ps
+  initial state s80 ""  if true go to s80 label "true"
+}
+
+scchart NormalMode {
+ input host "SensorValues" sv
+ output host "PumpStates" ps
+host "localVar" pLoad
+host "localVar" svFil
+host "localVar" pCirc
+  initial state s50 "" {
+region {
+  initial state s330 ""  if true go to s330 label "true"
+
+}
+region {
+  initial state s240 "ControlLoadPump" is ControlLoadPump(svFil,pLoad) 
+}
+region {
+  initial state s180 "ControlCircPump" is ControlCircPump(svFil,pCirc) 
+}
+region {
+  initial state s120 "FilterSensors" is FilterSensors(sv,svFil) 
+}
+}
+ }
+
+scchart ControlLoadPump {
+ input host "SensorValues" sv
+ output host "bool" p
+host "localVar" T_TOLERANCE_DHW_BOILER
+host "localVar" T_MIN_DHW_BOILER_OFFSET
+host "localVar" T_FLOW_MIN
+host "localVar" sBoiler
+host "localVar" sDhw
+  initial state s50 "HoldMinimumTemperature" is HoldMinimumTemperature(sDhw,sBoiler,T_FLOW_MIN,T_MIN_DHW_BOILER_OFFSET,T_TOLERANCE_DHW_BOILER,p) }
+
+scchart ControlCircPump {
+ input host "SensorValues" sv
+ output host "bool" p
+host "localVar" p2
+host "localVar" p1
+host "localVar" T_TOLERANCE_FLOW_DHW
+host "localVar" T_MIN_FLOW_DHW_OFFSET
+host "localVar" T_FLOW_MIN
+host "localVar" sDhw
+host "localVar" sFlow
+  initial state s50 "" {
+region {
+  initial state s270 ""  if true go to s270 label "true"
+
+}
+region {
+  initial state s180 "HoldDeltaTemperature" is HoldDeltaTemperature(sv,p2) 
+}
+region {
+  initial state s120 "HoldMinimumTemperature" is HoldMinimumTemperature(sFlow,sDhw,T_FLOW_MIN,T_MIN_FLOW_DHW_OFFSET,T_TOLERANCE_FLOW_DHW,p1) 
+}
+}
+ }
+
+scchart HoldDeltaTemperature {
+ input host "SensorValues" sv
+ output host "bool" p
+  initial state s80 ""  if true go to s110 label "T_MAX_FLOW_RETURN_DELTA < sFlow - sReturn"
+  state s110 ""  if true go to s80 label "abs_delta(sFlow, sReturn) < T_TOLERANCE_FLOW_RETURN"
+}
+
+scchart HoldMinimumTemperature {
+ input host "int32" tControlled
+ input host "int32" tActuating
+ input host "int32" minValue
+ input host "int32" minOffset
+ input host "int32" tolerance
+ output host "bool" p
+  initial state s80 ""  if true go to s110 label "tControlled < minValue and minOffset < tActuating - tControlled"
+  state s110 ""  if true go to s80 label "abs_delta(tControlled, tActuating) < tolerance"
+}
+
+scchart FilterSensors {
+ input host "SensorValues" svIn
+ output host "SensorValues" svOut
+host "localVar" sBoiler
+host "localVar" sDhw
+host "localVar" sReturn
+host "localVar" sFlow
+  initial state s50 "" {
+region {
+  initial state s540 "MovingAverage" is MovingAverage(sBoiler,sBoiler) 
+}
+region {
+  initial state s480 "MovingAverage" is MovingAverage(sDhw,sDhw) 
+}
+region {
+  initial state s420 "MovingAverage" is MovingAverage(sReturn,sReturn) 
+}
+region {
+  initial state s360 "MovingAverage" is MovingAverage(sFlow,sFlow) 
+}
+region {
+  initial state s300 "AdjustOutliers" is AdjustOutliers(sBoiler,sBoiler) 
+}
+region {
+  initial state s240 "AdjustOutliers" is AdjustOutliers(sDhw,sDhw) 
+}
+region {
+  initial state s180 "AdjustOutliers" is AdjustOutliers(sReturn,sReturn) 
+}
+region {
+  initial state s120 "AdjustOutliers" is AdjustOutliers(sFlow,sFlow) 
+}
+}
+ }
+
+scchart MovingAverage {
+ input host "int32" vRaw
+ output host "int32" vAvg
+  initial state s90 ""  immediate if true go to s150 label "1: 16 <= iNext"
+if true go to s90 label "true"
+  state s150 ""  if true go to s150 label "true"
+}
+
+scchart AdjustOutliers {
+ input host "int32" svIn
+ output host "int32" svOut
+  initial state s130 ""  if true go to s130 label "true"
+}
+
+scchart UpdateLedStates {
+ input host "SensorHealthStatus" sh
+ input host "PumpStates" ps
+ output host "LedStates" ls
+  initial state s80 ""  if true go to s80 label "true"
+}
+
+scchart CheckSensorHealthStatus {
+ input host "SensorValues" sv
+ output host "SensorHealthStatus" sh
+host "localVar" hBoiler
+host "localVar" sBoiler
+host "localVar" hDhw
+host "localVar" sDhw
+host "localVar" hReturn
+host "localVar" sReturn
+host "localVar" hFlow
+host "localVar" sFlow
+  initial state s50 "" {
+region {
+  initial state s300 "MonitorSensor" is MonitorSensor(sBoiler,hBoiler) 
+}
+region {
+  initial state s240 "MonitorSensor" is MonitorSensor(sDhw,hDhw) 
+}
+region {
+  initial state s180 "MonitorSensor" is MonitorSensor(sReturn,hReturn) 
+}
+region {
+  initial state s120 "MonitorSensor" is MonitorSensor(sFlow,hFlow) 
+}
+}
+ }
+
+scchart MonitorSensor {
+ input host "int32" sVal
+ output host "bool" status
+  initial state s260 ""  if true abort to s150 label "isValidSensorValue(sVal)"
+if true go to s270 label "true"
+  connector state s150 ""  immediate if true go to s450 label "1: 0_abortFinished"
+immediate go to s260 label "2: "
+  state s450 ""  if true abort to s340 label "not isValidSensorValue(sVal)"
+if true go to s460 label "true"
+  connector state s340 ""  immediate if true go to s260 label "1: 1_abortFinished"
+immediate go to s450 label "2: "
+  connector state s460 ""  immediate if true go to s340 label "1: 3 <= i"
+immediate go to s450 label "2: "
+  connector state s270 ""  immediate if true go to s150 label "1: 3 <= i"
+immediate go to s260 label "2: "
+}
+
+scchart LogControlState {
+ input host "SensorValues" sv
+ input host "PumpStates" ps
+ input host "nat8" mode
+  initial state s80 ""  if true go to s80 label "true"
+}
+

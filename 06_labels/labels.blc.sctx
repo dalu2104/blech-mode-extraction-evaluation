@@ -1,0 +1,42 @@
+/** 
+ @[EntryPoint]
+activity someActivity (in1 : bool, in2 : bool)
+    @@[label="awaiting in1"]
+    await in1
+
+    @@[label="waiting concurrently"]
+    cobegin
+       if in1 then 
+           @@[label="awaiting in1"]
+           await in1 
+       else 
+           @@[label="awaiting in2"]
+           await in2 
+           @@[label="this label disappears"]
+       end
+    with
+       @@[label="awaiting 1"]
+       await in1 
+       @@[label="this label disappears"]
+    end
+end
+ */ 
+scchart someActivity {
+ input host "bool" in1
+ input host "bool" in2
+  initial state s20 "awaiting in1"  if true go to s60 label "in1"
+  final state s60 "" {
+region {
+  initial state s270 "waiting concurrently awaiting 1"  if true go to s280 label "in1"
+  final state s280 ""  
+}
+region {
+  initial state s100 ""  immediate if true go to s170 label "1: in1"
+immediate if true go to s220 label "2: "
+  state s170 "waiting concurrently awaiting in1"  if true go to s110 label "in1"
+  final state s110 ""    state s220 "waiting concurrently awaiting in2"  if true go to s110 label "in2"
+
+}
+}
+ }
+

@@ -1,0 +1,133 @@
+/** 
+ struct Display
+    var hundredth: int32
+    var seconds: int32
+    var minutes: int32
+end
+
+@[CFunction(binding = "showConsole", header = "runtimeLAPFAST.h")]
+extern function show (this: Display)
+
+function writeTicksToDisplay (ticks: int32)(display: Display)
+    let seconds = ticks / 100
+    display.minutes = seconds / 60
+    display.seconds = seconds - 60 * display.minutes
+    display.hundredth = ticks - 100 * seconds
+end
+
+activity Measurement (isPressedResetLap: bool) (totalTime: int32, lastLap: int32, display: Display)
+    // run / lap
+    cobegin
+        repeat
+            await true
+            totalTime = totalTime + 1
+        end 
+    with
+        repeat
+            // show total time every tick
+            repeat
+                writeTicksToDisplay(totalTime)(display)
+                await true
+            until isPressedResetLap end
+
+            // calculate lap and update display once
+            let lapTime = totalTime - lastLap
+            lastLap = totalTime
+            writeTicksToDisplay(lapTime)(display) 
+            await isPressedResetLap
+            // back to total time
+        end
+    end
+end
+
+
+activity StopWatchController (startStop: bool, resetLap: bool) (display: Display) 
+    var totalTime: int32 
+    var lastLap: int32 
+    repeat 
+        totalTime = 0 //State init
+        @@[label="init"]
+        lastLap = 0 
+        writeTicksToDisplay(totalTime)(display) 
+        await startStop // Transition init -> run 
+        repeat 
+            cobegin weak
+                await startStop 
+            with weak 
+                run Measurement(resetLap) 
+                (totalTime, lastLap, display) 
+            end 
+            @@[label="stop"]
+            // State stop, show total time and wait 
+            writeTicksToDisplay(totalTime)(display) 
+            await startStop or resetLap 
+            // Run again if only startStop was pressed 
+        until resetLap end // Back to init if 
+    end // resetLap was pressed 
+end
+
+/// Main Program
+@[EntryPoint]
+activity Main (isPressedStartStop: bool, isPressedReset: bool)
+    var display: Display
+    cobegin
+        run StopWatchController(isPressedStartStop, 
+                                isPressedReset)
+                               (display)
+    with
+        // render
+        repeat
+            show(display)
+            await true
+        end
+    end
+end
+ */ 
+scchart Main {
+ input host "bool" isPressedStartStop
+ input host "bool" isPressedReset
+host "localVar" display
+  initial state s50 "" {
+region {
+  initial state s210 ""  if true go to s210 label "true"
+
+}
+region {
+  initial state s120 "StopWatchController" is StopWatchController(isPressedStartStop,isPressedReset,display) 
+}
+}
+ }
+
+scchart StopWatchController {
+ input host "bool" startStop
+ input host "bool" resetLap
+ output host "Display" display
+host "localVar" lastLap
+host "localVar" totalTime
+  initial state s80 "init"  if true go to s301 label "startStop"
+  state s301 "Measurement" is Measurement(resetLap,totalTime,lastLap,display) if true go to s192 label "startStop"
+  state s192 "stop"  if true go to s162 label "startStop or resetLap"
+  connector state s162 ""  immediate if true go to s80 label "1: resetLap"
+immediate go to s301 label "2: "
+}
+
+scchart Measurement {
+ input host "bool" isPressedResetLap
+ output host "int32" totalTime
+ output host "int32" lastLap
+ output host "Display" display
+  initial state s50 "" {
+region {
+  initial state s322 ""  if true go to s332 label "true"
+  connector state s332 ""  immediate if true go to s302 label "1: isPressedResetLap"
+immediate go to s322 label "2: "
+  state s302 ""  if true go to s322 label "isPressedResetLap"
+
+}
+region {
+  initial state s152 ""  if true go to s152 label "true"
+
+}
+}
+ }
+

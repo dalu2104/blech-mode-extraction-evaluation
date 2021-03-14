@@ -1,0 +1,21 @@
+@[EntryPoint]
+activity someActivity (in1 : bool, in2 : bool)
+    @@[label="awaiting in1"]
+    await in1
+
+    @@[label="waiting concurrently"]
+    cobegin
+       if in1 then 
+           @@[label="awaiting in1"]
+           await in1 
+       else 
+           @@[label="awaiting in2"]
+           await in2 
+           @@[label="this label disappears"]
+       end
+    with
+       @@[label="awaiting 1"]
+       await in1 
+       @@[label="this label disappears"]
+    end
+end

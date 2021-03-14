@@ -1,0 +1,386 @@
+const MODE_NORMAL: nat8 = 0
+const MODE_EMERGENCY: nat8 = 1
+const MOVING_AVERAGE_WINDOW: int8 = 16
+const SENSOR_OKAY_THRESHOLD: nat8 = 3
+const TEMPERATURE_MIN: int32 = 0
+const TEMPERATURE_MAX: int32 = 95
+
+@[CConst (binding = "LSENSOR_INVALID_VALUE", header = "lsensor.h")]
+extern const SENSOR_INVALID_VALUE: int32
+//
+// Configuration parameters.
+//
+@[CConst (binding ="config_getInt32(CONFIG_KEY_T_FLOW_MIN)", header = "config.h")]
+extern const T_FLOW_MIN: int32
+@[CConst (binding ="config_getInt32(CONFIG_KEY_T_MIN_FLOW_DHW_OFFSET)", header = "config.h")]
+extern const T_MIN_FLOW_DHW_OFFSET: int32
+@[CConst (binding ="config_getInt32(CONFIG_KEY_T_TOLERANCE_FLOW_DHW)", header = "config.h")]
+extern const T_TOLERANCE_FLOW_DHW: int32
+@[CConst (binding ="config_getInt32(CONFIG_KEY_T_MAX_FLOW_RETURN_DELTA)", header = "config.h")]
+extern const T_MAX_FLOW_RETURN_DELTA: int32
+@[CConst (binding ="config_getInt32(CONFIG_KEY_T_TOLERANCE_FLOW_RETURN)", header = "config.h")]
+extern const T_TOLERANCE_FLOW_RETURN: int32
+@[CConst (binding ="config_getInt32(CONFIG_KEY_T_MIN_DHW_BOILER_OFFSET)", header = "config.h")]
+extern const T_MIN_DHW_BOILER_OFFSET: int32
+@[CConst (binding ="config_getInt32(CONFIG_KEY_T_TOLERANCE_DHW_BOILER)", header = "config.h")]
+extern const T_TOLERANCE_DHW_BOILER: int32
+
+
+struct SensorValues
+    var sFlow: int32
+    var sReturn: int32
+    var sDhw: int32
+    var sBoiler: int32
+end
+
+struct SensorHealthStatus
+    var hFlow: bool
+    var hReturn: bool
+    var hDhw: bool
+    var hBoiler: bool
+end
+
+struct PumpStates
+    var pCirc: bool // Circulation pump.
+    var pLoad: bool // Load pump.
+end
+
+struct LedStates
+    var lCirc: bool     // Circulation pump state.
+    var lLoad: bool     // Load pump state.
+    var lFlow: bool     // Flow sensor state.
+    var lReturn: bool   // Return sensor state.
+    var lDhw: bool      // Domestic hot water sensor state.
+    var lBoiler: bool   // Boiler sensor state.
+    var lActivity: bool // Status: Activity.
+    var lWifi: bool     // Status: Wifi.
+end
+
+@[CFunction (source = "log.c")]
+extern function logState (sv: SensorValues, ps: PumpStates, mode: nat8)
+@[CFunction (binding = "wifi_isOnline()", header = "wifi.h")]
+extern singleton function wifiIsOnline () returns bool    
+
+function turnOffAllLeds () (ls: LedStates)
+    ls.lCirc = false
+    ls.lLoad = false
+    ls.lFlow = false
+    ls.lReturn = false
+    ls.lDhw = false
+    ls.lBoiler = false
+    ls.lActivity = false
+    ls.lWifi = false
+end
+
+function turnOnAllLeds () (ls: LedStates)
+    ls.lCirc = true
+    ls.lLoad = true
+    ls.lFlow = true
+    ls.lReturn = true
+    ls.lDhw = true
+    ls.lBoiler = true
+    ls.lActivity = true
+    ls.lWifi = true
+end
+
+function turnOffAllPumps () (ps: PumpStates)
+    ps.pCirc = false
+    ps.pLoad = false
+end
+
+function allSensorsOkay (sh: SensorHealthStatus) returns bool
+    return sh.hFlow and sh.hReturn and sh.hDhw and sh.hBoiler
+end
+
+function isValidSensorValue (v: int32) returns bool
+    return v != SENSOR_INVALID_VALUE
+end
+
+function abs_delta (a: int32, b: int32) returns int32
+    if a >= b then
+        return a - b
+    else
+        return b - a
+    end
+end
+
+activity LogControlState (sv: SensorValues, ps: PumpStates, mode: nat8) ()
+    repeat
+        logState(sv, ps, mode)
+        await true
+    end
+end
+
+activity MonitorSensor (sVal: int32)(status: bool)
+    repeat
+        status = true
+        //
+        // Await broken sensor.
+        //
+        when isValidSensorValue(sVal) reset
+            var i: nat8 = 0
+            repeat
+                await true
+                i = i + 1
+            until i >= SENSOR_OKAY_THRESHOLD end
+        end
+        status = false
+        //
+        // Await valid sensor.
+        //
+        when not isValidSensorValue(sVal) reset
+            var i: nat8 = 0
+            repeat
+                await true
+                i = i + 1
+            until i >= SENSOR_OKAY_THRESHOLD end
+        end
+    end
+end
+
+activity CheckSensorHealthStatus (sv: SensorValues) (sh: SensorHealthStatus)
+    cobegin
+        run MonitorSensor(sv.sFlow)(sh.hFlow)
+    with
+        run MonitorSensor(sv.sReturn)(sh.hReturn)
+    with
+        run MonitorSensor(sv.sDhw)(sh.hDhw)
+    with
+        run MonitorSensor(sv.sBoiler)(sh.hBoiler)
+    end
+end
+
+activity UpdateLedStates (sh: SensorHealthStatus, ps: PumpStates) (ls: LedStates)
+    repeat
+        //
+        // Pump LEDs.
+        //
+        ls.lCirc = ps.pCirc
+        ls.lLoad = ps.pLoad
+        //
+        // Sensor LEDs.
+        //
+        ls.lFlow = not sh.hFlow
+        ls.lReturn = not sh.hReturn
+        ls.lDhw = not sh.hDhw
+        ls.lBoiler = not sh.hBoiler
+        //
+        // Status LEDs.
+        //
+        ls.lActivity = not ls.lActivity
+        ls.lWifi = not wifiIsOnline()
+        await true
+    end
+end
+
+activity AdjustOutliers (svIn: int32) (svOut: int32)
+    var vLast: int32 = 0
+    repeat
+        //
+        // Suppress invalid sensor values.
+        //
+        if isValidSensorValue(svIn) then
+            svOut = svIn
+        //
+        // Saturate values out of range.
+        //
+        elseif svIn < TEMPERATURE_MIN then
+            svOut = TEMPERATURE_MIN
+        elseif svIn > TEMPERATURE_MAX then
+            svOut = TEMPERATURE_MAX
+        else
+            svOut = vLast
+        end
+        vLast = svOut
+        await true
+    end
+end
+
+activity MovingAverage (vRaw: int32) (vAvg: int32)
+    var vArray: [MOVING_AVERAGE_WINDOW]int32
+    var sum: int64 = 0
+
+    vAvg = 0
+    
+    // Value array is not filled yet.
+    var iNext: int8 = 0
+    repeat
+        await true
+        sum = sum + vRaw
+        vArray[iNext] = vRaw
+        iNext = iNext + 1
+        vAvg = (sum / iNext) as! int32
+    until iNext >= MOVING_AVERAGE_WINDOW end
+
+    // Value array is filled.
+    iNext = 0
+    repeat
+        await true
+        var vOldest = vArray[iNext] // Determine oldest value from array.
+        sum = sum - vOldest         // Remove oldest value from sum.
+        sum = sum + vRaw            // Add newest value to sum.
+        vArray[iNext] = vRaw        // Replace oldest value with newest in array.
+        iNext = (iNext + 1) % MOVING_AVERAGE_WINDOW
+        vAvg = (sum / MOVING_AVERAGE_WINDOW) as! int32
+    end
+end
+
+activity FilterSensors (svIn: SensorValues) (svOut: SensorValues)
+    var svAdj: SensorValues // Adjusted sensor values.
+    //
+    // Adjust sensor values.
+    //
+    cobegin
+        run AdjustOutliers(svIn.sFlow)(svAdj.sFlow)
+    with
+        run AdjustOutliers(svIn.sReturn)(svAdj.sReturn)
+    with
+        run AdjustOutliers(svIn.sDhw)(svAdj.sDhw)
+    with
+        run AdjustOutliers(svIn.sBoiler)(svAdj.sBoiler)
+    //
+    // Calculate moving average.
+    //
+    with
+        run MovingAverage(svAdj.sFlow)(svOut.sFlow)
+    with
+        run MovingAverage(svAdj.sReturn)(svOut.sReturn)
+    with
+        run MovingAverage(svAdj.sDhw)(svOut.sDhw)
+    with
+        run MovingAverage(svAdj.sBoiler)(svOut.sBoiler)
+    end
+end
+
+activity HoldMinimumTemperature (
+    tControlled: int32,
+    tActuating: int32,
+    minValue:int32,
+    minOffset: int32,
+    tolerance: int32) (p: bool)
+    p = false
+    repeat
+        await (tControlled < minValue) // Need for action?
+            and ((tActuating - tControlled) > minOffset) // Can we really improve?
+        //
+        // ON.
+        //
+        p = true
+
+        await abs_delta(tControlled, tActuating) < tolerance // Did we reach the temperature?
+        //
+        // OFF.
+        //
+        p = false
+    end
+end
+
+activity HoldDeltaTemperature (sv: SensorValues) (p: bool)
+    p = false
+    repeat
+        await (sv.sFlow - sv.sReturn) > T_MAX_FLOW_RETURN_DELTA // Need for action?
+        //
+        // ON.
+        //
+        p = true
+
+        await abs_delta(sv.sFlow, sv.sReturn) < T_TOLERANCE_FLOW_RETURN
+        //
+        // OFF.
+        //
+        p = false
+    end
+end
+
+activity ControlCircPump (sv: SensorValues) (p: bool)
+    var p1: bool = false
+    var p2: bool = false
+    cobegin
+        run HoldMinimumTemperature(sv.sFlow, sv.sDhw, T_FLOW_MIN, T_MIN_FLOW_DHW_OFFSET, T_TOLERANCE_FLOW_DHW)(p1)
+    with
+        run HoldDeltaTemperature(sv)(p2)
+    with
+        // Decide about the pump state.
+        // If at least one of above checks votes for 'true' then turn on the pump. 
+        repeat
+            p = p1 or p2
+            await true
+        end
+    end
+end
+
+activity ControlLoadPump (sv: SensorValues) (p: bool)
+    run HoldMinimumTemperature(sv.sDhw, sv.sBoiler, T_FLOW_MIN, T_MIN_DHW_BOILER_OFFSET, T_TOLERANCE_DHW_BOILER)(p)
+end
+
+activity NormalMode (sv: SensorValues) (ps: PumpStates)
+    var svFil: SensorValues
+    var pCirc: bool
+    cobegin
+        // Filter sensor values only on normal mode because otherwise the sensor
+        // values are not reliable anyway.
+        run FilterSensors(sv)(svFil)
+    with
+        run ControlCircPump(svFil)(pCirc)
+    with
+        run ControlLoadPump(svFil)(ps.pLoad)
+    with
+        // Do not run the circ pump if the load pump is running. Otherwise the circ pump activity
+        // will significantly increase the heating phase of the domestic hot water!
+        // Rule: First heat up the domestic hot water, second the flow / return.
+        repeat
+            ps.pCirc = pCirc and (not ps.pLoad)
+            await true
+        end
+    end
+end
+
+activity EmergencyMode () (ps: PumpStates)
+    //
+    // We don't care about sensor values.
+    // Pumps are always ON.
+    //
+    repeat
+        ps.pCirc = true
+        ps.pLoad = true
+        await true
+    end 
+end
+
+@[EntryPoint]
+activity Main (sv: SensorValues) (ps: PumpStates, ls: LedStates)
+    turnOffAllPumps()(ps)
+    turnOffAllLeds()(ls)
+
+    await true
+    turnOnAllLeds()(ls)
+    await true
+    turnOffAllLeds()(ls)
+
+    var mode: nat8              // current operation mode
+    var sh: SensorHealthStatus  // status of all sensors
+    cobegin
+        run LogControlState(sv, ps, mode)
+    with
+        run UpdateLedStates(sh, ps)(ls)
+    with
+        run CheckSensorHealthStatus(sv)(sh)
+    with
+        repeat
+            //
+            // Normal Operation Mode
+            //
+            mode = MODE_NORMAL
+            when not allSensorsOkay(sh) abort
+                run NormalMode(sv)(ps)
+            end
+            //
+            // Emergency Operation Mode
+            //
+            mode = MODE_EMERGENCY
+            when allSensorsOkay(sh) abort
+                run EmergencyMode()(ps)
+            end
+        end
+    end
+end

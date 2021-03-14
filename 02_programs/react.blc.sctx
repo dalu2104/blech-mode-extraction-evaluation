@@ -1,0 +1,141 @@
+scchart Main {
+host "localVar" score
+  initial state s50 "SplashScreen" is SplashScreen join to s130 label "1: "
+  state s130 "StartScreen" is StartScreen immediate if true join to s520 label "1: selection == 2"
+immediate if true join to s350 label "2: selection == 1"
+immediate if true join to s220 label "3: selection == 0"
+join to s130 label "4: "
+  state s520 "HighscoreScreen" is HighscoreScreen join to s130 label "1: "
+  state s350 "PlayScreen" is PlayScreen join to s370 label "1: "
+  state s370 "ResultScreen" is ResultScreen(score) join to s390 label "1: "
+  state s390 "HighscoreScreen" is HighscoreScreen join to s130 label "1: "
+  state s220 "HelpScreen" is HelpScreen join to s130 label "1: "
+}
+
+scchart HighscoreScreen {
+  initial state s20 ""  if true go to s30 label "true"
+  final state s30 ""  }
+
+scchart ResultScreen {
+ input host "Score" score
+host "localVar" buttonPressed
+  initial final state s270 "PressToContinueController" is PressToContinueController(buttonPressed,true) }
+
+scchart PlayScreen {
+host "localVar" score
+host "localVar" buttonPressed
+  initial state s50 "CountDownScreen" is CountDownScreen(3) join to s70 label "1: "
+  state s70 "PlayStartScreen" is PlayStartScreen(buttonPressed,score) immediate if true join to s160 label "1: isValid"
+join to s30 label "2: "
+  state s160 "PlaySignalScreen" is PlaySignalScreen(buttonPressed,score) join to s30 label "1: "
+  final state s30 ""  }
+
+scchart PlaySignalScreen {
+ input host "bool" buttonPressed
+ output host "Score" score
+host "localVar" time
+  initial final state s50 "" {
+final region {
+  initial final state s230 "Delay" is Delay(3000) 
+}
+final region {
+  initial state s170 "Timer" is Timer(time) 
+}
+final region {
+  initial state s90 ""  if true go to s100 label "buttonPressed"
+  final state s100 ""  
+}
+}
+ }
+
+scchart PlayStartScreen {
+ input host "bool" buttonPressed
+ output host "Score" score
+host "localVar" waitTime
+  initial state s110 "Delay" is Delay(waitTime) if true abort to s30 label "buttonPressed"
+join to s30 label "1: "
+  final state s30 ""  }
+
+scchart HelpScreen {
+host "localVar" buttonPressed
+  initial final state s50 "PressToContinueController" is PressToContinueController(buttonPressed,true) }
+
+scchart StartScreen {
+host "localVar" buttonPressed
+  initial final state s50 "PressToContinueController" is PressToContinueController(buttonPressed,true) }
+
+scchart SplashScreen {
+  initial final state s50 "Dimmer" is Dimmer(0,5000) }
+
+scchart CountDownScreen {
+ input host "nat8" counts
+  initial state s110 "Delay" is Delay(1000) immediate if true join to s30 label "1: i == 0"
+join to s110 label "2: "
+  final state s30 ""  }
+
+scchart PressToContinueController {
+ input host "bool" buttonPressed
+ input host "bool" wantsDimming
+host "localVar" continueButtonPressed
+host "localVar" didStartDimming
+  initial state s20 ""  immediate if true go to s123 label "1: wantsDimming"
+immediate go to s373 label "2: "
+  state s123 "" {
+final region {
+  initial state s311 "BoolGate" is BoolGate(buttonPressed,! didStartDimming,continueButtonPressed) 
+}
+final region {
+  initial state s252 "DimmDownController" is DimmDownController(buttonPressed,5000,5000,didStartDimming) 
+}
+region {
+  initial final state s193 "DoubleClickController" is DoubleClickController(continueButtonPressed) 
+}
+}
+ join to s30 label "1: "
+  final state s30 ""    state s373 "DoubleClickController" is DoubleClickController(buttonPressed) join to s30 label "1: "
+}
+
+scchart DoubleClickController {
+ input host "bool" buttonPressed
+  initial state s20 ""  if true go to s123 label "buttonPressed"
+  state s123 "Delay" is Delay(300) if true abort to s30 label "buttonPressed"
+join to s30 label "1: "
+  final state s30 ""  }
+
+scchart DimmDownController {
+ input host "bool" buttonPressed
+ input host "nat32" waitTime
+ input host "nat32" fadeTime
+ output host "bool" didStartDimming
+  initial state s113 "Delay" is Delay(waitTime) join to s193 label "1: "
+  state s193 "Dimmer" is Dimmer(1,fadeTime) if true abort to s143 label "buttonPressed"
+if true join to s143 label "false"
+  state s143 ""  if true go to s113 label "true"
+}
+
+scchart Dimmer {
+ input host "nat8" direction
+ input host "nat32" millis
+host "localVar" stepDuration
+  initial state s223 "Delay" is Delay(stepDuration) immediate if true join to s30 label "1: ticks == 100"
+join to s223 label "2: "
+  final state s30 ""  }
+
+scchart Timer {
+ output host "nat32" millis
+  initial state s83 ""  if true go to s83 label "true"
+}
+
+scchart Delay {
+ input host "nat32" millis
+  initial state s163 ""  immediate if true go to s30 label "1: ticks == 0"
+if true go to s163 label "true"
+  final state s30 ""  }
+
+scchart BoolGate {
+ input host "bool" inValue
+ input host "bool" enabled
+ output host "bool" outValue
+  initial state s133 ""  if true go to s133 label "true"
+}
+

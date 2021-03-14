@@ -1,0 +1,83 @@
+struct Display
+    var hundredth: int32
+    var seconds: int32
+    var minutes: int32
+end
+
+@[CFunction(binding = "showConsole", header = "runtimeLAPFAST.h")]
+extern function show (this: Display)
+
+function writeTicksToDisplay (ticks: int32)(display: Display)
+    let seconds = ticks / 100
+    display.minutes = seconds / 60
+    display.seconds = seconds - 60 * display.minutes
+    display.hundredth = ticks - 100 * seconds
+end
+
+activity Measurement (isPressedResetLap: bool) (totalTime: int32, lastLap: int32, display: Display)
+    // run / lap
+    cobegin
+        repeat
+            await true
+            totalTime = totalTime + 1
+        end 
+    with
+        repeat
+            // show total time every tick
+            repeat
+                writeTicksToDisplay(totalTime)(display)
+                await true
+            until isPressedResetLap end
+
+            // calculate lap and update display once
+            let lapTime = totalTime - lastLap
+            lastLap = totalTime
+            writeTicksToDisplay(lapTime)(display) 
+            await isPressedResetLap
+            // back to total time
+        end
+    end
+end
+
+
+activity StopWatchController (startStop: bool, resetLap: bool) (display: Display) 
+    var totalTime: int32 
+    var lastLap: int32 
+    repeat 
+        totalTime = 0 //State init
+        @@[label="init"]
+        lastLap = 0 
+        writeTicksToDisplay(totalTime)(display) 
+        await startStop // Transition init -> run 
+        repeat 
+            cobegin weak
+                await startStop 
+            with weak 
+                run Measurement(resetLap) 
+                (totalTime, lastLap, display) 
+            end 
+            @@[label="stop"]
+            // State stop, show total time and wait 
+            writeTicksToDisplay(totalTime)(display) 
+            await startStop or resetLap 
+            // Run again if only startStop was pressed 
+        until resetLap end // Back to init if 
+    end // resetLap was pressed 
+end
+
+/// Main Program
+@[EntryPoint]
+activity Main (isPressedStartStop: bool, isPressedReset: bool)
+    var display: Display
+    cobegin
+        run StopWatchController(isPressedStartStop, 
+                                isPressedReset)
+                               (display)
+    with
+        // render
+        repeat
+            show(display)
+            await true
+        end
+    end
+end

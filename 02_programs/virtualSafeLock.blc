@@ -1,0 +1,348 @@
+/// This is the reference implementation for the "XDK Virtual Lock"
+/// initially written for the BoCSE 2019 tutorial.
+///
+/// See accompanyning lecture notes for the specification.
+/// 
+/// (c) Robert Bosch GmbH, 2019
+
+/******************************************************************************
+ * Global constants
+ *****************************************************************************/
+const OneG: int32 = 4095 // acceleration value from sensor which we 
+                         // consider to be at least 1g (gravitation force)
+const PositionEpsilon: int32 = 400  // 10% epsilon
+const Cos45xG: int32 = 2895 // cos(45°) * OneG = sin(45°) * OneG
+
+/// We encode pose information by a prime number encoding
+/// For example: we represent the XDK standing upright (12 o'clock) as
+/// NORTH * EXACT = 2 * 11 = 22
+const UNDEFPOS: nat32 = 1
+
+const NORTH: nat32 = 2
+const EAST: nat32 = 3
+const SOUTH: nat32 = 5
+const WEST: nat32 = 7
+
+const EXACT: nat32 = 11
+const RIGHTOF: nat32 = 13
+const LEFTOF: nat32 = 17
+
+/// The maximum length of the secret
+const MAXLEN: nat32 = 8
+
+
+/******************************************************************************
+ * Helpers
+ *****************************************************************************/
+/// invert LEDs' status values
+function invertLEDs () (ledLeft: bool, ledMiddle: bool, ledRight: bool) 
+    ledRight = not ledMiddle
+    ledLeft = not ledMiddle
+    ledMiddle = not ledMiddle
+end
+
+/// indicate succesfully entered secret
+function successToLEDs ()  (ledLeft: bool, ledMiddle: bool, ledRight: bool) 
+    ledRight = true
+    ledLeft = true
+    ledMiddle = true
+end
+
+/// true if the device is put face down on the table
+function faceDownOnTheTable(z: int32, mlux: int32) returns bool
+    return mlux < 18000 and z < -900
+end
+
+/// value is +- PositionEpsilon around point
+function around (v: int32, p: int32) returns bool
+    // abs(p-v) <= epsilon
+    if v <= p then 
+        return p-v <= PositionEpsilon
+    else 
+        return v-p <= PositionEpsilon
+    end
+end
+
+/**
+                                                                           XddX 
+                                                                        WKkxclK 
+                                                                    XWXkxx0NOdK 
+                                                                 NKOkxxkXW  OdK 
+                                                                WKxdkKW     OdK 
+                                                              XOxxON        OdK 
+                                                           N0xxkXW          OdK 
+                                                        WKkdxKW             OdK 
+                                                     WXOxdON                OdK 
+                                                   N0xdkXW                  OdK 
+                                               NWXkxk0N                     OdK 
+                      HYPOTENUSE             odxxxOX                        OdK 
+                                         WNXOddxKW                          OdK 
+                                       WNKkxx0N                             OdK 
+                                     NOxddON                                OdK 
+                                  WKkdkKNW                                  OdK 
+                               WXOxx0N                                      OdK 
+                             N0xxOXW                                        OdK 
+                          WKkxkKW                                           OdK 
+                        XOxxON                                              OdK 
+                     N0xxkXW                                                OdK 
+                  WKkdx0W                                       OPPOSITE    clK 
+                NOxdON                                                      ooK 
+             W0xdkKW                                                        OdK 
+          WKkxx0N                                                           OdK 
+        NOxxkKW                                                             OdK 
+     N0klcOX      angle alpha                                               OdK 
+  WXkdx0X                                                                   OdK 
+NOolx0XNX0xOK0KXNNNNNNNNXXNNXXXNNXNXNXXXXXXXXNXXNNNXXXXNNNNNNNNNNNNNNNNNXXXNxoK 
+O::dxxxxxdodxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxokN 
+
+                                   ADJACENT
+*/
+function isExact (nearG: int32, nearZero: int32) returns bool
+    return nearG >= OneG - PositionEpsilon 
+        and around(nearZero, 0)
+end
+
+function isRightOf (opposite: int32, adjacent: int32) returns bool
+    return OneG > opposite 
+        and opposite > Cos45xG
+        and PositionEpsilon < adjacent 
+        and adjacent < Cos45xG
+end
+
+function isLeftOf (opposite: int32, adjacent: int32) returns bool
+    return isRightOf(opposite, -adjacent)
+end
+
+/// Determine proximity of given vector to South direction
+function isSouthAligned (x: int32, y: int32) returns nat32
+    if isExact(x, y) then 
+        return EXACT
+    elseif isRightOf(x, y) then 
+        return RIGHTOF
+    elseif isLeftOf(x, y) then 
+        return LEFTOF
+    else 
+        return UNDEFPOS
+    end
+end
+
+/// point symmetric to isSouthAligned
+function isNorthAligned (x: int32, y: int32) returns nat32
+    return isSouthAligned(-x, -y)
+end
+
+/// map to isSouthAligned by rotation
+function isEastAligned (x: int32, y: int32) returns nat32
+    return isSouthAligned(-y, x)
+end
+
+/// point symmetric to isEastAligned
+function isWestAligned (x: int32, y: int32) returns nat32
+    return isEastAligned(-x, -y)
+end
+
+/// Determines the XDK's pose given the x and y values of the accelerometer
+function determineOrientation (x: int32, y: int32) returns nat32
+    // check every direction and take the first that gives a defined alignment
+    var alignment = isNorthAligned(x, y)
+    if UNDEFPOS != alignment then return alignment * NORTH end
+    alignment = isEastAligned(x, y)
+    if UNDEFPOS != alignment then return alignment * EAST end
+    alignment = isSouthAligned(x, y)
+    if UNDEFPOS != alignment then return alignment * SOUTH end
+    alignment = isWestAligned(x, y)
+    if UNDEFPOS != alignment then return alignment * WEST end
+    return UNDEFPOS
+end
+
+/// Given a pose sets LED to reflect the alignment
+function poseToLED (pose: nat32) (ledLeft: bool, ledMiddle: bool, ledRight: bool) 
+    ledMiddle = false
+    ledRight = false
+    ledLeft = false
+    if pose % EXACT == 0 then
+        ledMiddle = true
+    elseif pose % RIGHTOF == 0 then
+        ledRight = true
+    elseif pose % LEFTOF == 0 then
+        ledLeft = true
+    end
+end
+
+/// Given a pose, tells if it is exactly aligned
+function poseIsExact (pose: nat32) returns bool
+    return pose % EXACT == 0
+end
+
+/******************************************************************************
+ * Misc helper activities
+ *****************************************************************************/
+
+/// In every tick: given accelerometer sensor readings
+/// sets LED to reflect the pose
+activity DisplayOrientation (x: int32, y: int32)
+                            (ledLeft: bool, ledMiddle: bool, ledRight: bool, pose: nat32)
+    repeat
+        pose = determineOrientation(x, y)
+        poseToLED(pose)(ledLeft, ledMiddle, ledRight)
+        await true
+    end
+end
+
+/// When called, delays execution for a given number of ticks
+activity CountDown (ticks: nat32)
+    var steps = ticks
+    repeat
+        await true
+        steps = steps - 1
+    until steps <= 0 end
+end
+
+
+/// Invert the status of all LEDs every half a second
+activity Blink () (ledLeft: bool, ledMiddle: bool, ledRight: bool)
+    repeat
+        invertLEDs()(ledLeft, ledMiddle, ledRight)
+        run CountDown(5) // do nothing for 5 ticks = 0.5s
+    end
+end
+
+
+/******************************************************************************
+ * Activities (representing modes)
+ *****************************************************************************/
+
+activity EnterSecret (secret: [MAXLEN]nat32, pose: nat32, pressedOne: bool) returns bool
+    var idx: nat32 = 0
+    var ok = true
+    repeat
+        await pressedOne
+        if poseIsExact(pose) then
+            if pose == secret[idx] then
+                idx = idx + 1
+                if idx < MAXLEN and secret[idx] == UNDEFPOS then // guard array access
+                    idx = MAXLEN // skip the rest
+                end
+            else
+                ok = false
+            end
+        end
+        // else inexact position, do not evaluate
+    until not ok or idx == MAXLEN end
+    return ok 
+end
+
+/// Contains the process of unlocking the virtual lock
+/// Returns true iff lock has been opened successfully
+activity Unlock (secret: [MAXLEN]nat32, x: int32, y: int32, pressedOne: bool)
+                (ledLeft: bool, ledMiddle: bool, ledRight: bool)
+                returns bool
+
+    var pose: nat32
+    var ok = false
+    cobegin weak
+        run DisplayOrientation(x, y)(ledLeft, ledMiddle, ledRight, pose)
+    with
+        run ok = EnterSecret(secret, pose, pressedOne)
+    end
+    return ok
+end
+
+
+activity EnterNewSecret (pose: nat32, pressedOne: bool, pressedTwo: bool)
+                        (newSecret: [MAXLEN]nat32) returns bool
+    var idx: nat32 = 0    
+    cobegin weak
+        repeat
+            await pressedOne and not pressedTwo
+            if poseIsExact(pose) then
+                newSecret[idx] = pose
+                idx = idx + 1
+            end
+            // else inexact position, do not evaluate
+        until idx == MAXLEN end
+    with weak
+        await pressedTwo and not pressedOne // finish programming
+    end
+    return idx > 0 // at least one position has been entered
+end
+
+/// The process of setting a new secret in the virtual lock
+activity Programming (x: int32, y: int32, pressedOne: bool, pressedTwo: bool)
+                     (secret: [MAXLEN]nat32, ledLeft: bool, ledMiddle: bool, ledRight: bool)
+                     returns bool
+    var pose: nat32
+    var newSecret: [MAXLEN]nat32 = { UNDEFPOS, UNDEFPOS, UNDEFPOS, UNDEFPOS, 
+                                      UNDEFPOS, UNDEFPOS, UNDEFPOS, UNDEFPOS }
+    var ok = false
+
+    cobegin weak
+        run DisplayOrientation(x, y)(ledLeft, ledMiddle, ledRight, pose)
+    with
+        run ok = EnterNewSecret(pose, pressedOne, pressedTwo)(newSecret)
+    end
+    if ok then 
+        secret = newSecret
+    end    
+    return ok
+end
+
+
+/// In the locked mode, keep blinking until the user presses button 1
+activity Locked (pressedOne: bool)
+                (ledLeft: bool, ledMiddle: bool, ledRight: bool)
+    when pressedOne abort // Button 1: start unlocking
+        run Blink()(ledLeft, ledMiddle, ledRight)
+    end
+end
+
+/// Lock has been successfully opened
+/// Determine exclusively pressed button
+activity Success (pressedOne: bool, pressedTwo: bool)
+                 (ledLeft: bool, ledMiddle: bool, ledRight: bool) 
+                 returns bool
+    successToLEDs()(ledLeft, ledMiddle, ledRight)
+    
+    await pressedOne and not pressedTwo
+          or pressedTwo and not pressedOne //exactly one button is pressed
+
+    if pressedTwo then
+        return true // indicate that we want to reprogram the secret
+    else
+        return false // Button 1 leads back to start
+    end
+end
+
+
+
+/******************************************************************************
+ * Program starts here
+ *****************************************************************************/
+@[EntryPoint]
+activity XDKBonus (x: int32, y: int32, z: int32, pressedOne: bool, pressedTwo: bool, mlux: int32)
+                  (ledLeft: bool, ledMiddle: bool, ledRight: bool)
+    var secret: [MAXLEN]nat32 = { EXACT * NORTH, EXACT * EAST, EXACT * WEST, EXACT * SOUTH, 
+                                   UNDEFPOS, UNDEFPOS, UNDEFPOS, UNDEFPOS }
+    repeat
+        // abort when the device is put face down on the table
+        when faceDownOnTheTable(z, mlux) abort
+            // I.
+            run Locked(pressedOne)(ledLeft, ledMiddle, ledRight)
+
+            // II.
+            var successful = false
+            run successful = Unlock(secret, x, y, pressedOne)(ledLeft, ledMiddle, ledRight)
+            if successful then
+                
+                // III.
+                var wantReprogramming = false
+                run wantReprogramming = Success(pressedOne, pressedTwo)(ledLeft, ledMiddle, ledRight)
+                if wantReprogramming then
+                    
+                    // IV.
+                    run _ = Programming(x, y, pressedOne, pressedTwo)(secret, ledLeft, ledMiddle, ledRight)
+                end
+            end
+        end
+    end
+end

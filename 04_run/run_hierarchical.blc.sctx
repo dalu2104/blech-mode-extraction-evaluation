@@ -1,0 +1,25 @@
+/** 
+ activity someOther (inp1 : bool)
+    await inp1
+end 
+
+
+@[EntryPoint]
+activity someActivity (inp0 : bool)
+    await inp0
+    run someOther(inp0)
+    run someOther(inp0)
+end
+
+ */ 
+scchart someActivity {
+ input host "bool" inp0
+  initial state s20 ""  if true go to s60 label "inp0"
+  state s60 "someOther" is someOther(inp0) join to s80 label "1: "
+  final state s80 "someOther" is someOther(inp0) }
+
+scchart someOther {
+ input host "bool" inp1
+  initial state s20 ""  if true go to s30 label "inp1"
+  final state s30 ""  }
+

@@ -1,0 +1,11 @@
+activity someOther (inp1 : bool)
+    await inp1
+end 
+
+
+@[EntryPoint]
+activity someActivity (inp0 : bool)
+    await inp0
+    run someOther(inp0)
+    run someOther(inp0)
+end

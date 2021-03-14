@@ -1,0 +1,121 @@
+scchart XDKBonus {
+ input host "int32" x
+ input host "int32" y
+ input host "int32" z
+ input host "bool" pressedOne
+ input host "bool" pressedTwo
+ input host "int32" mlux
+ output host "bool" ledLeft
+ output host "bool" ledMiddle
+ output host "bool" ledRight
+host "localVar" secret
+  initial state s170 "Locked" is Locked(pressedOne,ledLeft,ledMiddle,ledRight) if true abort to s170 label "faceDownOnTheTable(z, mlux)"
+join to s190 label "1: "
+  state s190 "Unlock" is Unlock(secret,x,y,pressedOne,ledLeft,ledMiddle,ledRight) if true abort to s170 label "faceDownOnTheTable(z, mlux)"
+immediate if true join to s280 label "1: successful"
+join to s170 label "2: "
+  state s280 "Success" is Success(pressedOne,pressedTwo,ledLeft,ledMiddle,ledRight) if true abort to s170 label "faceDownOnTheTable(z, mlux)"
+immediate if true join to s370 label "1: wantReprogramming"
+join to s170 label "2: "
+  state s370 "Programming" is Programming(x,y,pressedOne,pressedTwo,secret,ledLeft,ledMiddle,ledRight) if true abort to s170 label "faceDownOnTheTable(z, mlux)"
+join to s170 label "1: "
+}
+
+scchart Success {
+ input host "bool" pressedOne
+ input host "bool" pressedTwo
+ output host "bool" ledLeft
+ output host "bool" ledMiddle
+ output host "bool" ledRight
+  initial state s20 ""  if true go to s30 label "pressedOne and not pressedTwo or pressedTwo and not pressedOne"
+  final state s30 ""  }
+
+scchart Locked {
+ input host "bool" pressedOne
+ output host "bool" ledLeft
+ output host "bool" ledMiddle
+ output host "bool" ledRight
+  initial state s110 "Blink" is Blink(ledLeft,ledMiddle,ledRight) if true abort to s30 label "pressedOne"
+  final state s30 ""  }
+
+scchart Programming {
+ input host "int32" x
+ input host "int32" y
+ input host "bool" pressedOne
+ input host "bool" pressedTwo
+ output host "[8]nat32" secret
+ output host "bool" ledLeft
+ output host "bool" ledMiddle
+ output host "bool" ledRight
+host "localVar" newSecret
+host "localVar" pose
+  initial final state s50 "" {
+region {
+  initial final state s180 "EnterNewSecret" is EnterNewSecret(pose,pressedOne,pressedTwo,newSecret) 
+}
+final region {
+  initial state s120 "DisplayOrientation" is DisplayOrientation(x,y,ledLeft,ledMiddle,ledRight,pose) 
+}
+}
+ }
+
+scchart EnterNewSecret {
+ input host "nat32" pose
+ input host "bool" pressedOne
+ input host "bool" pressedTwo
+ output host "[8]nat32" newSecret
+  initial state s160 ""  immediate if true go to s30 label "1: idx == 8"
+if true go to s160 label "pressedOne and not pressedTwo"
+if true go to s30 label "pressedTwo and not pressedOne"
+  final state s30 ""  }
+
+scchart Unlock {
+ input host "[8]nat32" secret
+ input host "int32" x
+ input host "int32" y
+ input host "bool" pressedOne
+ output host "bool" ledLeft
+ output host "bool" ledMiddle
+ output host "bool" ledRight
+host "localVar" pose
+  initial final state s50 "" {
+region {
+  initial final state s180 "EnterSecret" is EnterSecret(secret,pose,pressedOne) 
+}
+final region {
+  initial state s120 "DisplayOrientation" is DisplayOrientation(x,y,ledLeft,ledMiddle,ledRight,pose) 
+}
+}
+ }
+
+scchart EnterSecret {
+ input host "[8]nat32" secret
+ input host "nat32" pose
+ input host "bool" pressedOne
+  initial state s90 ""  immediate if true go to s30 label "1: not ok or idx == 8"
+if true go to s90 label "pressedOne"
+  final state s30 ""  }
+
+scchart Blink {
+ output host "bool" ledLeft
+ output host "bool" ledMiddle
+ output host "bool" ledRight
+  initial state s110 "CountDown" is CountDown(5) join to s110 label "1: "
+}
+
+scchart CountDown {
+ input host "nat32" ticks
+  initial state s90 ""  immediate if true go to s30 label "1: steps <= 0"
+if true go to s90 label "true"
+  final state s30 ""  }
+
+scchart DisplayOrientation {
+ input host "int32" x
+ input host "int32" y
+ output host "bool" ledLeft
+ output host "bool" ledMiddle
+ output host "bool" ledRight
+ output host "nat32" pose
+  initial state s80 ""  if true go to s80 label "true"
+}
+
